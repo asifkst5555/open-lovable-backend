@@ -10,9 +10,10 @@ const { Pool } = pkg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production"
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl:
+    process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
+      : false,
 });
 
 const app = express();
@@ -40,7 +41,7 @@ app.get("/db-test", async (req, res) => {
 });
 
 /**
- * Initialize database tables (RUN ONCE, then can be removed)
+ * Initialize database tables (RUN ONCE)
  */
 app.get("/init-db", async (req, res) => {
   try {
@@ -68,11 +69,10 @@ app.get("/init-db", async (req, res) => {
 });
 
 /**
- * Create a new project
+ * Create project
  */
 app.post("/projects", async (req, res) => {
   const { name } = req.body;
-
   if (!name) {
     return res.status(400).json({ error: "Project name is required" });
   }
@@ -93,7 +93,7 @@ app.post("/projects", async (req, res) => {
 });
 
 /**
- * List all projects
+ * List projects
  */
 app.get("/projects", async (req, res) => {
   try {
@@ -108,8 +108,7 @@ app.get("/projects", async (req, res) => {
 });
 
 /**
- * Save files for a project (overwrite behavior like Lovable.dev)
- * body: { files: [{ path, content }] }
+ * Save files for a project (overwrite)
  */
 app.post("/projects/:projectId/files", async (req, res) => {
   const { projectId } = req.params;
@@ -122,11 +121,7 @@ app.post("/projects/:projectId/files", async (req, res) => {
   try {
     await pool.query("BEGIN");
 
-    // Remove old files
-    await pool.query(
-      "DELETE FROM files WHERE project_id = $1",
-      [projectId]
-    );
+    await pool.query("DELETE FROM files WHERE project_id = $1", [projectId]);
 
     for (const file of files) {
       await pool.query(
@@ -148,7 +143,7 @@ app.post("/projects/:projectId/files", async (req, res) => {
 });
 
 /**
- * Load files for a project
+ * Load files for a project ✅ FIXED (includes id)
  */
 app.get("/projects/:projectId/files", async (req, res) => {
   const { projectId } = req.params;
@@ -156,7 +151,7 @@ app.get("/projects/:projectId/files", async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT path, content
+      SELECT id, path, content
       FROM files
       WHERE project_id = $1
       ORDER BY created_at ASC
@@ -171,19 +166,15 @@ app.get("/projects/:projectId/files", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`);
-});
-
 /**
- * Update file content
+ * Update single file content ✅
  */
 app.patch("/files/:id", async (req, res) => {
   const { id } = req.params;
   const { content } = req.body;
 
-  if (!content) {
+  // allow empty string, only block undefined
+  if (content === undefined) {
     return res.status(400).json({ error: "Content is required" });
   }
 
@@ -198,4 +189,9 @@ app.patch("/files/:id", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Backend running on port ${PORT}`);
 });
