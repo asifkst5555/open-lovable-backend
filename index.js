@@ -40,7 +40,7 @@ app.get("/db-test", async (req, res) => {
 });
 
 /**
- * Initialize database tables (run once, then can be removed)
+ * Initialize database tables (RUN ONCE, then can be removed)
  */
 app.get("/init-db", async (req, res) => {
   try {
@@ -100,6 +100,70 @@ app.get("/projects", async (req, res) => {
     const result = await pool.query(
       "SELECT * FROM projects ORDER BY created_at DESC"
     );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Save files for a project (overwrite behavior like Lovable.dev)
+ * body: { files: [{ path, content }] }
+ */
+app.post("/projects/:projectId/files", async (req, res) => {
+  const { projectId } = req.params;
+  const { files } = req.body;
+
+  if (!Array.isArray(files)) {
+    return res.status(400).json({ error: "files array is required" });
+  }
+
+  try {
+    await pool.query("BEGIN");
+
+    // Remove old files
+    await pool.query(
+      "DELETE FROM files WHERE project_id = $1",
+      [projectId]
+    );
+
+    for (const file of files) {
+      await pool.query(
+        `
+        INSERT INTO files (id, project_id, path, content)
+        VALUES ($1, $2, $3, $4)
+        `,
+        [uuidv4(), projectId, file.path, file.content]
+      );
+    }
+
+    await pool.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await pool.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Load files for a project
+ */
+app.get("/projects/:projectId/files", async (req, res) => {
+  const { projectId } = req.params;
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT path, content
+      FROM files
+      WHERE project_id = $1
+      ORDER BY created_at ASC
+      `,
+      [projectId]
+    );
+
     res.json(result.rows);
   } catch (err) {
     console.error(err);
