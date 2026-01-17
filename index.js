@@ -20,29 +20,27 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-/**
- * Health check
- */
+/* =========================
+   HEALTH + DB
+========================= */
+
 app.get("/health", (req, res) => {
   res.json({ status: "Backend running OK" });
 });
 
-/**
- * Database connectivity test
- */
 app.get("/db-test", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
     res.json({ success: true, time: result.rows[0] });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-/**
- * Initialize database tables (RUN ONCE)
- */
+/* =========================
+   INIT DB (RUN ONCE)
+========================= */
+
 app.get("/init-db", async (req, res) => {
   try {
     await pool.query(`
@@ -63,14 +61,14 @@ app.get("/init-db", async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-/**
- * Create project
- */
+/* =========================
+   PROJECTS
+========================= */
+
 app.post("/projects", async (req, res) => {
   const { name } = req.body;
   if (!name) {
@@ -79,117 +77,108 @@ app.post("/projects", async (req, res) => {
 
   const id = uuidv4();
 
-  try {
-    await pool.query(
-      "INSERT INTO projects (id, name) VALUES ($1, $2)",
-      [id, name]
-    );
+  await pool.query(
+    "INSERT INTO projects (id, name) VALUES ($1, $2)",
+    [id, name]
+  );
 
-    res.json({ id, name });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  res.json({ id, name });
 });
 
-/**
- * List projects
- */
 app.get("/projects", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT * FROM projects ORDER BY created_at DESC"
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  const result = await pool.query(
+    "SELECT * FROM projects ORDER BY created_at DESC"
+  );
+  res.json(result.rows);
 });
 
-/**
- * Save files for a project (overwrite)
- */
-app.post("/projects/:projectId/files", async (req, res) => {
-  const { projectId } = req.params;
-  const { files } = req.body;
+/* =========================
+   FILES (A8 COMPLETE)
+========================= */
 
-  if (!Array.isArray(files)) {
-    return res.status(400).json({ error: "files array is required" });
-  }
-
-  try {
-    await pool.query("BEGIN");
-
-    await pool.query("DELETE FROM files WHERE project_id = $1", [projectId]);
-
-    for (const file of files) {
-      await pool.query(
-        `
-        INSERT INTO files (id, project_id, path, content)
-        VALUES ($1, $2, $3, $4)
-        `,
-        [uuidv4(), projectId, file.path, file.content]
-      );
-    }
-
-    await pool.query("COMMIT");
-    res.json({ success: true });
-  } catch (err) {
-    await pool.query("ROLLBACK");
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * Load files for a project ✅ FIXED (includes id)
- */
+/* Load files */
 app.get("/projects/:projectId/files", async (req, res) => {
   const { projectId } = req.params;
 
-  try {
-    const result = await pool.query(
-      `
-      SELECT id, path, content
-      FROM files
-      WHERE project_id = $1
-      ORDER BY created_at ASC
-      `,
-      [projectId]
-    );
+  const result = await pool.query(
+    `
+    SELECT id, path, content
+    FROM files
+    WHERE project_id = $1
+    ORDER BY created_at ASC
+    `,
+    [projectId]
+  );
 
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  res.json(result.rows);
 });
 
-/**
- * Update single file content ✅
- */
+/* Create new file */
+app.post("/projects/:projectId/files/new", async (req, res) => {
+  const { projectId } = req.params;
+  const { path } = req.body;
+
+  if (!path) {
+    return res.status(400).json({ error: "Path is required" });
+  }
+
+  const id = uuidv4();
+
+  await pool.query(
+    `
+    INSERT INTO files (id, project_id, path, content)
+    VALUES ($1, $2, $3, '')
+    `,
+    [id, projectId, path]
+  );
+
+  res.json({ id, path, content: "" });
+});
+
+/* Update file content */
 app.patch("/files/:id", async (req, res) => {
   const { id } = req.params;
   const { content } = req.body;
 
-  // allow empty string, only block undefined
   if (content === undefined) {
     return res.status(400).json({ error: "Content is required" });
   }
 
-  try {
-    await pool.query(
-      "UPDATE files SET content = $1 WHERE id = $2",
-      [content, id]
-    );
+  await pool.query(
+    "UPDATE files SET content = $1 WHERE id = $2",
+    [content, id]
+  );
 
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  res.json({ success: true });
 });
+
+/* Rename file */
+app.patch("/files/:id/rename", async (req, res) => {
+  const { id } = req.params;
+  const { path } = req.body;
+
+  if (!path) {
+    return res.status(400).json({ error: "Path is required" });
+  }
+
+  await pool.query(
+    "UPDATE files SET path = $1 WHERE id = $2",
+    [path, id]
+  );
+
+  res.json({ success: true });
+});
+
+/* Delete file */
+app.delete("/files/:id", async (req, res) => {
+  const { id } = req.params;
+
+  await pool.query("DELETE FROM files WHERE id = $1", [id]);
+
+  res.json({ success: true });
+});
+
+/* ========================= */
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
