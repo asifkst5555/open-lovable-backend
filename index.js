@@ -175,3 +175,27 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`);
 });
+
+/**
+ * Update file content
+ */
+app.patch("/files/:id", async (req, res) => {
+  const { id } = req.params;
+  const { content } = req.body;
+
+  if (!content) {
+    return res.status(400).json({ error: "Content is required" });
+  }
+
+  try {
+    await pool.query(
+      "UPDATE files SET content = $1 WHERE id = $2",
+      [content, id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
